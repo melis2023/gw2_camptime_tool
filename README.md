@@ -35,7 +35,7 @@ camptime_tool/
 ├── 64bit/
 │   └── RapidOcrOnnx.dll   # OCR 推理引擎
 ├── models/                # OCR 模型文件
-└── orc/
+└── ocr/
     ├── config.ini         # 配置（热键，自动生成）
     └── image.png          # 临时截图（自动生成）
 ```
