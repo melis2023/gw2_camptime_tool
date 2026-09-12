@@ -174,7 +174,7 @@ KeyDelay := 0
 KeyDuration := 0
 ControlDelay := 0
 
-; 删除旧版 orc 文件夹（如存在）初版命名错误
+; 删除旧版 orc 文件夹（如存在）
 oldDir := ScriptDir . "\orc"
 if FileExist(oldDir) {
     try DirDelete(oldDir, 1)
@@ -190,8 +190,8 @@ if FileExist(config_file) {
     rangeY := IniRead(config_file, "Settings", "RangeY", 25)
 }
 
-; 创建 GUI（-SysMenu 移除右上角关闭按钮）
-myGui := Gui("+Resize -SysMenu", "条子计时器")
+; 创建 GUI（-SysMenu 移除右上角关闭按钮，-Resize 禁止拖动调整大小）
+myGui := Gui("-SysMenu -Resize", "条子计时器")
 myGui.OnEvent("Close", (*) => ExitApp())   ; Alt+F4 直接退出
 myGui.MarginX := 12
 myGui.MarginY := 10
