@@ -174,7 +174,7 @@ KeyDelay := 0
 KeyDuration := 0
 ControlDelay := 0
 
-; 删除旧版 orc 文件夹（如存在）
+; 删除旧版 orc 文件夹（如存在）初版命名错误
 oldDir := ScriptDir . "\orc"
 if FileExist(oldDir) {
     try DirDelete(oldDir, 1)
