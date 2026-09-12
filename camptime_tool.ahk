@@ -1,31 +1,106 @@
-﻿#Include RapidOcr.ahk
+#Include RapidOcr.ahk
 #Include ImagePut.ahk
 
 ; 全局变量
 global usetime := 0
 global starttime := 0
 global hotkeyName := "F8"
+global lastHotkey := "F8"  ; 上一次的热键
+global rangeX := 25  ; X范围百分比（默认25 ↔ 乘数2.5）
+global rangeY := 25  ; Y范围百分比（默认25 ↔ 乘数2.5）
+global hotkeyGui := ""  ; 二级热键设置窗口
+global hotkeyCtrl := ""  ; 热键控件引用
+global hotkeyDisplay := ""  ; 热键显示文本控件
 CoordMode "ToolTip", "Screen"
+
 ; 函数定义
+ShowHotkeySettings(*) {
+    global hotkeyName, hotkeyGui, hotkeyCtrl, hotkeyDisplay, config_file
+    ; 如果窗口已打开，激活它
+    if (hotkeyGui != "" && WinExist("ahk_id " hotkeyGui.Hwnd)) {
+        WinActivate "ahk_id " hotkeyGui.Hwnd
+        return
+    }
+    ; 创建二级窗口（与主窗口样式一致）
+    hotkeyGui := Gui("+Owner" myGui.Hwnd, "热键设置")
+    hotkeyGui.MarginX := 12
+    hotkeyGui.MarginY := 10
+    hotkeyGui.SetFont("s8", "Microsoft YaHei")
+    hotkeyDisplay := hotkeyGui.Add("Text", "w260 Center", "当前热键：" hotkeyName)
+    hotkeyGui.Add("Text", "w260 Center c666666", "点击下方框后按下新热键")
+    hotkeyCtrl := hotkeyGui.Add("Hotkey", "w260", hotkeyName)
+    saveBtn := hotkeyGui.Add("Button", "w120 y+8", "保存热键")
+    saveBtn.OnEvent("Click", SaveHotkey)
+    restoreBtn := hotkeyGui.Add("Button", "w120 x+12 yp", "恢复上次")
+    restoreBtn.OnEvent("Click", RestoreHotkey)
+    hotkeyGui.OnEvent("Close", (*) => (hotkeyGui := ""))
+    hotkeyGui.Show()
+    saveBtn.Focus()
+}
+
 SaveHotkey(*) {
-    global hotkeyName, config_file, hotkeyCtrl
+    global hotkeyName, lastHotkey, config_file, hotkeyGui, hotkeyCtrl, hotkeyDisplay
+    if (hotkeyGui == "")
+        return
     newKey := hotkeyCtrl.Value
     if (newKey != "") {
-        ; 取消旧热键，注册新热键（实时生效，无需重开软件）
+        ; 记录上一次的热键
+        lastHotkey := hotkeyName
+        ; 取消旧热键，注册新热键（实时生效）
         try Hotkey hotkeyName, "Off"
         try Hotkey newKey, DoCapture
         hotkeyName := newKey
         IniWrite(newKey, config_file, "Settings", "Hotkey")
+        ; 关闭二级窗口
+        hotkeyGui.Destroy()
+        hotkeyGui := ""
         ToolTip "热键已保存并生效：" newKey
         Sleep 1000
         ToolTip
     }
 }
 
+RestoreHotkey(*) {
+    global hotkeyName, lastHotkey, config_file, hotkeyGui, hotkeyCtrl, hotkeyDisplay
+    if (hotkeyGui == "")
+        return
+    ; 取消当前热键
+    try Hotkey hotkeyName, "Off"
+    ; 恢复到上一次的热键
+    hotkeyName := lastHotkey
+    hotkeyCtrl.Value := lastHotkey
+    try Hotkey hotkeyName, DoCapture
+    IniWrite(hotkeyName, config_file, "Settings", "Hotkey")
+    ; 更新二级窗口的显示
+    hotkeyDisplay.Value := "当前热键：" hotkeyName
+    ToolTip "已恢复热键：" hotkeyName
+    Sleep 1000
+    ToolTip
+}
+
+SaveRange(*) {
+    global rangeX, rangeY, config_file, rangeXCtrl, rangeYCtrl
+    newX := rangeXCtrl.Value
+    newY := rangeYCtrl.Value
+    if (newX ~= "^\d+$" && newY ~= "^\d+$" && newX >= 1 && newX <= 500 && newY >= 1 && newY <= 500) {
+        rangeX := Integer(newX)
+        rangeY := Integer(newY)
+        IniWrite(rangeX, config_file, "Settings", "RangeX")
+        IniWrite(rangeY, config_file, "Settings", "RangeY")
+        ToolTip "范围已保存并生效：X " rangeX "% / Y " rangeY "%"
+        Sleep 1000
+        ToolTip
+    } else {
+        ToolTip "范围需为 1-500 之间的整数！"
+        Sleep 1000
+        ToolTip
+    }
+}
+
 DoCapture(*) {
-    global starttime, usetime, ScriptDir, image_file, myGui
-    ; 锁定机制：当前激活窗口是设置界面时，热键不可用
-    if WinActive("ahk_id " myGui.Hwnd)
+    global starttime, usetime, ScriptDir, image_file, myGui, rangeX, rangeY
+    ; 锁定机制：只有游戏窗口激活时才生效
+    if !WinActive("ahk_exe Gw2-64.exe")
         return
     fenzhong := 0
     miao := 0
@@ -41,8 +116,8 @@ DoCapture(*) {
 
     x := Floor(winX + winW * 0.4)
     y := Floor(winY)
-    w := (mousey - y) * 3  ; 宽度20%（中心左右各10%）
-    h := (mousey - y) * 3  ; 高度10%
+    w := Floor((mousey - y) * (rangeX / 10))  ; 宽度 = 鼠标距顶距离 × X范围(%)/10
+    h := Floor((mousey - y) * (rangeY / 10))  ; 高度 = 鼠标距顶距离 × Y范围(%)/10
     if (w < 10)
         w := 10
     if (h < 10)
@@ -57,7 +132,7 @@ DoCapture(*) {
             text := block.text
             if (text != "") {
                 if RegExMatch(text, "剩余时间") {
-                    if (match := RegExMatch(text, "(\d+)分钟", &minutes)) {
+                    if (match := RegExMatch(text, "(\d+)分", &minutes)) {
                         fenzhong := minutes[1]
                     }
                     if (match := RegExMatch(text, "(\d+)秒", &clock)) {
@@ -92,18 +167,21 @@ MyTimer() {
 
 ; 主程序
 ScriptDir := A_ScriptDir
-config_file := ScriptDir . "\orc\config.ini"
-image_file := ScriptDir . "\orc\image.png"
+config_file := ScriptDir . "\ocr\config.ini"
+image_file := ScriptDir . "\ocr\image.png"
 WinDelay := 0
 KeyDelay := 0
 KeyDuration := 0
 ControlDelay := 0
 
-; 读取配置的热键
+; 读取配置的热键与范围
 if FileExist(config_file) {
     savedKey := IniRead(config_file, "Settings", "Hotkey", "F8")
     if (savedKey != "")
         hotkeyName := savedKey
+    lastHotkey := hotkeyName
+    rangeX := IniRead(config_file, "Settings", "RangeX", 25)
+    rangeY := IniRead(config_file, "Settings", "RangeY", 25)
 }
 
 ; 创建 GUI（-SysMenu 移除右上角关闭按钮）
@@ -114,31 +192,32 @@ myGui.MarginY := 10
 myGui.SetFont("s10", "Microsoft YaHei")
 
 ; ── 标题区 ──
-myGui.SetFont("s13 bold", "Microsoft YaHei")
+myGui.SetFont("s12 bold", "Microsoft YaHei")
 myGui.Add("Text", "w360 Center", "条子计时器")
-myGui.SetFont("s9", "Microsoft YaHei")
+myGui.SetFont("s8", "Microsoft YaHei")
 myGui.Add("Text", "w360 Center c4A4A4A", "GW2 监管员 · 义愤填膺倒计时")
-myGui.Add("Text", "w360", "")
-
-; ── 热键设置组 ──
-myGui.Add("GroupBox", "w360 h82 Section", "热键设置")
-myGui.Add("Text", "xs+16 ys+28", "启动热键：")
-hotkeyCtrl := myGui.Add("Hotkey", "w140 x+8 yp", hotkeyName)
-saveBtn := myGui.Add("Button", "w75 x+8 yp", "保存热键")
-saveBtn.OnEvent("Click", SaveHotkey)
-myGui.Add("Text", "xs+16 y+12 w330 c666666", "点击热键框后才可修改，其他情况不会改动热键")
 
 ; ── 使用说明组 ──
-myGui.Add("GroupBox", "w360 h115 xm Section", "使用说明")
-myGui.Add("Text", "xs+16 ys+26 w330", "1.  鼠标移动到监管员的义愤填膺图标")
-myGui.Add("Text", "xs+16 y+10 w330", "2.  按下热键获取剩余时间，自动倒计时")
-myGui.Add("Text", "xs+16 y+10 w330", "3.  ESC 退出计时  |  软件需保持常驻")
+myGui.Add("GroupBox", "w360 h60 xm Section", "使用说明")
+myGui.Add("Text", "xs+16 ys+20 w330", "鼠标移到义愤填膺图标 → 按热键自动倒计时 | ESC 停止计时")
+
+; ── 截图范围设置组 ──
+myGui.Add("GroupBox", "w360 h65 xm Section", "截图范围设置")
+myGui.Add("Text", "xs+16 ys+22", "X 范围 (%):")
+rangeXCtrl := myGui.Add("Edit", "w50 x+8 yp-3 Number", rangeX)
+myGui.Add("Text", "x+12 yp+3", "Y 范围 (%):")
+rangeYCtrl := myGui.Add("Edit", "w50 x+8 yp-3 Number", rangeY)
+rangeSaveBtn := myGui.Add("Button", "w70 x+16 yp-1", "保存范围")
+rangeSaveBtn.OnEvent("Click", SaveRange)
+myGui.Add("Text", "xs+16 y+6 w330 c666666", "默认 25%，范围越大截图区域越大，该窗口需常驻，不要关闭")
 
 ; ── 底部按钮 ──
 myGui.SetFont("s10", "Microsoft YaHei")
-myGui.Add("Button", "w100 y+18 xm+130", "退出软件").OnEvent("Click", (*) => ExitApp())
+hotkeyBtn := myGui.Add("Button", "w100 y+12 xm+20", "设置热键")
+hotkeyBtn.OnEvent("Click", ShowHotkeySettings)
+exitBtn := myGui.Add("Button", "w100 x+20 yp", "退出软件")
+exitBtn.OnEvent("Click", (*) => ExitApp())
 myGui.Show()
-saveBtn.Focus()   ; 焦点移到保存按钮，避免 Hotkey 控件误捕获按键
 
 ; 动态注册热键
 try Hotkey hotkeyName, DoCapture
